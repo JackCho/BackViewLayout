@@ -1,0 +1,5 @@
+<resources>
+    <string name="app_name">BackViewLayout</string>
+    <string name="line_1">网页由 ele.me 提供</string>
+    <string name="line_2">Ele Mobile提供浏览器内核技术支持</string>
+</resources>
