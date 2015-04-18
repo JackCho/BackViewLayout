@@ -33,7 +33,6 @@ import android.view.animation.Animation.AnimationListener;
 import android.view.animation.Interpolator;
 import android.view.animation.Transformation;
 import android.widget.AbsListView;
-import android.widget.ScrollView;
 
 import java.util.concurrent.atomic.AtomicBoolean;
 
@@ -48,7 +47,6 @@ public class BackViewLayout extends ViewGroup {
 
     private View mTarget; //the content that gets pulled down
     private int mOriginalOffsetTop;
-    private boolean mRefreshing = false;
     private int mTouchSlop;
     private float mDistanceToTriggerSync = -1;
     private int mMediumAnimationDuration;
@@ -65,7 +63,7 @@ public class BackViewLayout extends ViewGroup {
     // Target is returning to its start offset because it was cancelled or a
     // refresh was triggered.
     private boolean mReturning;
-    private static final Interpolator SINTERPOLATOR = new Interpolator() {
+    private static final Interpolator S_INTERPOLATOR = new Interpolator() {
         public float getInterpolation(float t) {
             t -= 1.0f;
             return t * t * t * t * t + 1.0f;
@@ -127,8 +125,6 @@ public class BackViewLayout extends ViewGroup {
             }
         }
 
-        ;
-
         private AnimateToStartPosition mAnimateToStartPosition = new AnimateToStartPosition();
 
         @Override
@@ -141,7 +137,7 @@ public class BackViewLayout extends ViewGroup {
         private void animateOffsetToStartPosition(int from, AnimationListener listener) {
             mAnimateToStartPosition.reset();
             mAnimateToStartPosition.setDuration(mMediumAnimationDuration);
-            mAnimateToStartPosition.setInterpolator(SINTERPOLATOR);
+            mAnimateToStartPosition.setInterpolator(S_INTERPOLATOR);
             mAnimateToStartPosition.setFromPosition(from);
             mAnimateToStartPosition.setAnimationListener(listener);
             mTarget.startAnimation(mAnimateToStartPosition);
@@ -152,85 +148,6 @@ public class BackViewLayout extends ViewGroup {
             mAnimateToStartPosition.stop();
         }
     }
-
-    private final class ReturnToRefreshingPositionRunnable implements Runnable {
-
-        private final AnimationListener mReturnToRefreshingPositionListener = new BaseAnimationListener() {
-            @Override
-            public void onAnimationEnd(Animation animation) {
-                mCurrentTargetOffsetTop = (int) mDistanceToTriggerSync;
-                startRefresh();
-                mReturning = false;
-            }
-        };
-
-        private class AnimateToRefreshingPosition extends Animation {
-
-            private int from;
-            private AtomicBoolean stoped;
-
-            public AnimateToRefreshingPosition() {
-                stoped = new AtomicBoolean(false);
-            }
-
-            public void reset() {
-                super.reset();
-                stoped.set(false);
-            }
-
-            public void stop() {
-                stoped.set(true);
-            }
-
-            public void setFromPosition(int from) {
-                this.from = from;
-            }
-
-            @Override
-            public void applyTransformation(float interpolatedTime, Transformation t) {
-                if (!stoped.get()) {
-                    int translation = (int) ((mDistanceToTriggerSync - from) * interpolatedTime);
-                    int targetTop = from + translation;
-                    int currentTop = mTarget.getTop();
-                    int offset = (targetTop - currentTop);
-                    setTargetOffsetTopAndBottom(offset);
-                }
-            }
-        }
-
-        ;
-
-        private final AnimateToRefreshingPosition mAnimateToRefreshingPosition = new AnimateToRefreshingPosition();
-
-        public void run() {
-            ensureTarget();
-            if (mTarget instanceof AbsListView) {
-                ((AbsListView) mTarget).setSelection(0);
-            }
-            if (mTarget instanceof ScrollView) {
-                ScrollView scrollView = (ScrollView) mTarget;
-                scrollView.scrollTo(scrollView.getScrollX(), 0);
-            }
-
-            animateOffsetToRefreshingPosition(mCurrentTargetOffsetTop + getPaddingTop(), mReturnToRefreshingPositionListener);
-        }
-
-        private void animateOffsetToRefreshingPosition(int from, AnimationListener listener) {
-            mAnimateToRefreshingPosition.reset();
-            mAnimateToRefreshingPosition.setDuration(mMediumAnimationDuration);
-            mAnimateToRefreshingPosition.setInterpolator(SINTERPOLATOR);
-            mAnimateToRefreshingPosition.setFromPosition(from);
-            mAnimateToRefreshingPosition.setAnimationListener(listener);
-            mTarget.startAnimation(mAnimateToRefreshingPosition);
-        }
-
-        public void cancel() {
-            removeCallbacks(this);
-            mAnimateToRefreshingPosition.stop();
-        }
-    }
-
-    ;
 
     private class CancelPullRunnable implements Runnable {
 
@@ -246,13 +163,12 @@ public class BackViewLayout extends ViewGroup {
 
     }
 
-    private final ReturnToRefreshingPositionRunnable returnToRefreshingPositionRunnable = new ReturnToRefreshingPositionRunnable();
     private final ReturnToStartPositionRunnable returnToStartPositionRunnable = new ReturnToStartPositionRunnable();
     private final CancelPullRunnable cancelPullRunnable = new CancelPullRunnable();
 
 
     /**
-     * Simple constructor to use when creating a SwipeRefreshLayout from code.
+     * Simple constructor to use when creating a BackViewLayout from code.
      *
      * @param context
      */
@@ -261,7 +177,7 @@ public class BackViewLayout extends ViewGroup {
     }
 
     /**
-     * Constructor that is called when inflating SwipeRefreshLayout from XML.
+     * Constructor that is called when inflating BackViewLayout from XML.
      *
      * @param context
      * @param attrs
@@ -304,7 +220,6 @@ public class BackViewLayout extends ViewGroup {
 
     private void removeCallbacks() {
         returnToStartPositionRunnable.cancel();
-        returnToRefreshingPositionRunnable.cancel();
         cancelPullRunnable.cancel();
     }
 
@@ -312,19 +227,6 @@ public class BackViewLayout extends ViewGroup {
     public void onDetachedFromWindow() {
         super.onDetachedFromWindow();
         removeCallbacks();
-    }
-
-    /**
-     * Notify the widget that refresh state has changed. Do not call this when
-     * refresh is triggered by a swipe gesture.
-     *
-     * @param refreshing Whether or not the view should show refresh progress.
-     */
-    private void setRefreshing(boolean refreshing) {
-        if (mRefreshing != refreshing) {
-            ensureTarget();
-            mRefreshing = refreshing;
-        }
     }
 
     private void postRunnable(final Runnable runnable) {
@@ -463,10 +365,7 @@ public class BackViewLayout extends ViewGroup {
                 }
                 break;
 
-            case MotionEventCompat.ACTION_POINTER_UP:
-                onSecondaryPointerUp(ev);
-                break;
-
+            case MotionEventCompat.ACTION_POINTER_DOWN:
             case MotionEvent.ACTION_UP:
             case MotionEvent.ACTION_CANCEL:
                 mIsBeingDragged = false;
@@ -515,8 +414,6 @@ public class BackViewLayout extends ViewGroup {
                 }
 
                 if (mIsBeingDragged) {
-//                    final int targetTop = mCurrentTargetOffsetTop + (yDiff > 0 ? (int)(yDiff * 0.6) : (int) yDiff);
-//                    final int targetTop = (int) (mCurrentTargetOffsetTop + yDiff);
                     updateContentOffsetTop((int) yDelta);
                     if (mLastMotionY > y && mTarget.getTop() == getPaddingTop()) {
                         removeCallbacks(cancelPullRunnable);
@@ -527,17 +424,7 @@ public class BackViewLayout extends ViewGroup {
                 }
                 break;
 
-            case MotionEventCompat.ACTION_POINTER_DOWN: {
-                final int index = MotionEventCompat.getActionIndex(ev);
-                mLastMotionY = MotionEventCompat.getY(ev, index);
-                mActivePointerId = MotionEventCompat.getPointerId(ev, index);
-                break;
-            }
-
-            case MotionEventCompat.ACTION_POINTER_UP:
-                onSecondaryPointerUp(ev);
-                break;
-
+            case MotionEventCompat.ACTION_POINTER_DOWN:
             case MotionEvent.ACTION_UP:
             case MotionEvent.ACTION_CANCEL:
                 mIsBeingDragged = false;
@@ -547,11 +434,6 @@ public class BackViewLayout extends ViewGroup {
         }
 
         return true;
-    }
-
-    private void startRefresh() {
-        removeCallbacks();
-        setRefreshing(true);
     }
 
     private void updateContentOffsetTop(int offset) {
@@ -579,19 +461,6 @@ public class BackViewLayout extends ViewGroup {
         removeCallbacks(cancelPullRunnable);
         postDelayed(cancelPullRunnable, RETURN_TO_ORIGINAL_POSITION_TIMEOUT);
     }
-
-    private void onSecondaryPointerUp(MotionEvent ev) {
-        final int pointerIndex = MotionEventCompat.getActionIndex(ev);
-        final int pointerId = MotionEventCompat.getPointerId(ev, pointerIndex);
-        if (pointerId == mActivePointerId) {
-            // This was our active pointer going up. Choose a new
-            // active pointer and adjust accordingly.
-            final int newPointerIndex = pointerIndex == 0 ? 1 : 0;
-            mLastMotionY = MotionEventCompat.getY(ev, newPointerIndex);
-            mActivePointerId = MotionEventCompat.getPointerId(ev, newPointerIndex);
-        }
-    }
-
 
     /**
      * Simple AnimationListener to avoid having to implement unneeded methods in
